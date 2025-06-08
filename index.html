@@ -140,8 +140,8 @@
         <label>구역 정보 입력</label>
         <div id="zones">
             <div class="zone-entry">
-                <input type="text" class="zone-number" placeholder="숫자 또는 구역 이름 (예: 54)" oninput="formatZoneNumber(this)" required>
-                <textarea class="zone-members" placeholder="배정된 이름 (예: 서광옥, 이경순, 조명자)" required></textarea>
+                <input type="text" class="zone-number" placeholder="숫자 또는 구역 이름 (예: 54, 55)" required>
+                <textarea class="zone-members" placeholder="배정된 이름 (예: 서광옥 이경순, 조명자 손귀선)" required></textarea>
             </div>
         </div>
         <button class="add-btn" onclick="addZone()">구역 추가</button>
@@ -153,20 +153,13 @@
     <div id="alert" class="alert"></div>
 
     <script>
-        function formatZoneNumber(input) {
-            const value = input.value.trim();
-            if (/^\d+$/.test(value)) {
-                input.value = `${value}번 구역`;
-            }
-        }
-
         function addZone() {
             const zonesDiv = document.getElementById('zones');
             const newZone = document.createElement('div');
             newZone.className = 'zone-entry';
             newZone.innerHTML = `
-                <input type="text" class="zone-number" placeholder="숫자 또는 구역 이름 (예: 54)" oninput="formatZoneNumber(this)" required>
-                <textarea class="zone-members" placeholder="배정된 이름 (예: 서광옥, 이경순, 조명자)" required></textarea>
+                <input type="text" class="zone-number" placeholder="숫자 또는 구역 이름 (예: 54, 55)" required>
+                <textarea class="zone-members" placeholder="배정된 이름 (예: 서광옥 이경순, 조명자 손귀선)" required></textarea>
             `;
             zonesDiv.appendChild(newZone);
             zonesDiv.scrollTop = zonesDiv.scrollHeight;
@@ -179,6 +172,24 @@
             const days = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
             const dayName = days[date.getDay()];
             return `${month}월 ${day}일 ${dayName}`;
+        }
+
+        function formatZoneNumber(value) {
+            // Split by comma and check if all parts are numbers
+            const parts = value.split(',').map(part => part.trim());
+            const allNumbers = parts.every(part => /^\d+$/.test(part));
+            if (allNumbers && parts.length > 0) {
+                return `${parts.join(', ')}번 구역`;
+            }
+            return value;
+        }
+
+        function formatMembers(members) {
+            // Split by comma first, then process spaces within each group
+            return members.split(',').map(group => {
+                // Trim and split by spaces, then join with ' / '
+                return group.trim().split(/\s+/).filter(name => name).join(' / ');
+            }).join(', ');
         }
 
         function showAlert(message) {
@@ -202,7 +213,9 @@
                 const number = zone.querySelector('.zone-number').value.trim();
                 const members = zone.querySelector('.zone-members').value.trim();
                 if (number && members) {
-                    zoneText += `-${number}: [${members}]\n`;
+                    const formattedNumber = formatZoneNumber(number);
+                    const formattedMembers = formatMembers(members);
+                    zoneText += `-${formattedNumber}: [${formattedMembers}]\n`;
                     valid = true;
                 }
             });
