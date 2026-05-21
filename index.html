@@ -286,6 +286,33 @@
   /* ══ SHARE PREVIEW ══ */
   .sharePreview { background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px; font-size:13px; line-height:1.8; white-space:pre-wrap; font-family:'Noto Sans KR',sans-serif; color:var(--text); max-height:300px; overflow-y:auto; }
 
+  /* ══ ZONE STAT ROW (클릭 가능한 구역 목록) ══ */
+  .zoneStatRow {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 12px; border-radius: var(--radius-sm);
+    cursor: pointer; transition: background 0.12s;
+    margin-bottom: 4px;
+  }
+  .zoneStatRow:hover { background: var(--surface2); }
+  .zoneStatLabel { font-size: 13px; font-weight: 500; width: 90px; flex-shrink: 0; color: var(--text2); }
+  .zoneStatBarWrap { flex: 1; height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; }
+  .zoneStatBarFill { height: 100%; background: var(--accent); border-radius: 4px; }
+  .zoneStatCount { font-family:'DM Mono',monospace; font-size: 12px; color: var(--text3); width: 28px; text-align: right; flex-shrink: 0; }
+  .zoneStatArrow { font-size: 14px; color: var(--text3); flex-shrink: 0; }
+
+  /* ══ ZONE DETAIL PANEL ══ */
+  .zoneHistoryItem {
+    background: var(--surface2); border-radius: var(--radius-sm);
+    padding: 12px 14px; margin-bottom: 8px;
+  }
+  .zoneHistoryDate { font-size: 12px; font-weight: 700; color: var(--text2); margin-bottom: 6px; }
+  .zoneHistoryWorkers { display: flex; flex-wrap: wrap; gap: 5px; }
+  .zoneHistoryWorkerTag { background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 3px 9px; font-size: 12px; color: var(--text2); }
+  .zoneHistorySummary { font-size: 11px; color: var(--text3); margin-top: 6px; }
+
+  /* ══ ZONE SEARCH 최근날짜 ══ */
+  .zoneSearchMeta { font-size: 10px; color: var(--text3); margin-left: auto; flex-shrink: 0; }
+
   /* ══ RESPONSIVE ══ */
   @media (min-width:640px) { .statsGrid { grid-template-columns:repeat(4,1fr); } }
   @media (min-width:1024px) {
@@ -386,8 +413,18 @@
         <div class="card"><div class="cardTitle">전도인 최근 참여 날짜</div><div id="workerRecentList"></div></div>
       </div>
       <div id="statsZone" style="display:none">
-        <div class="card"><div class="cardTitle">구역별 배정 횟수</div><div id="zoneChartList"></div></div>
-        <div class="card"><div class="cardTitle">구역별 전도인 현황</div><div id="zoneWorkerDetail"></div></div>
+        <div class="card">
+          <div class="cardTitle">구역 선택</div>
+          <div id="zoneChartList"></div>
+        </div>
+        <!-- 드릴다운: 구역 클릭 시 표시 -->
+        <div id="zoneDetailPanel" style="display:none">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+            <button class="btn btn-ghost btn-sm" onclick="closeZoneDetail()">← 목록</button>
+            <span id="zoneDetailTitle" style="font-size:15px;font-weight:700"></span>
+          </div>
+          <div id="zoneDetailContent"></div>
+        </div>
       </div>
       <div id="statsTimeline" style="display:none">
         <div class="card"><div class="cardTitle">날짜별 봉사 기록</div><div id="timelineList"></div></div>
@@ -693,6 +730,14 @@ async function renderZoneSearchList() {
   const list = document.getElementById('zoneSearchList');
   if (!list) return;
   const zones = await cachedZones();
+  const records = await cachedRecords();
+
+  // 구역별 최근 배정 날짜 계산
+  const zoneLastDate = {};
+  records.forEach(r => r.zones.forEach(z => {
+    if (!zoneLastDate[z.zoneId] || r.date > zoneLastDate[z.zoneId]) zoneLastDate[z.zoneId] = r.date;
+  }));
+
   const filtered = q
     ? zones.filter(z => zoneShort(z).toLowerCase().includes(q) || parseZone(z).num.includes(q))
     : zones;
@@ -703,12 +748,16 @@ async function renderZoneSearchList() {
     const p = parseZone(z);
     const isAssigned = !!assignedZones.find(a => a.zoneId === z);
     const isChecked  = checkedZones.has(z);
+    const lastDate   = zoneLastDate[z];
+    const lastLabel  = lastDate ? formatDateShort(lastDate) : '미배정';
     return `<div class="zoneSearchItem${isChecked?' checked':''}${isAssigned?' disabled':''}"
       data-zone="${z}" ${isAssigned ? '' : 'onclick="toggleZoneSearchItem(this)"'}>
       <div class="zoneSearchChk"><span class="zoneSearchChkMark">✓</span></div>
       <span class="zoneSearchNum">${p.num ? p.num+'번' : ''}</span>
       <span class="zoneSearchName">${p.name || p.full}</span>
-      ${isAssigned ? '<span style="font-size:11px;color:var(--text3)">배정됨</span>' : ''}
+      ${isAssigned
+        ? '<span style="font-size:11px;color:var(--text3)">배정됨</span>'
+        : `<span class="zoneSearchMeta">${lastLabel}</span>`}
     </div>`;
   }).join('');
 
@@ -1248,26 +1297,17 @@ async function renderStats() {
   const sortedZ = Object.entries(zoneCount).sort((a,b) => b[1]-a[1]);
   const maxZ    = sortedZ[0]?.[1] || 1;
   document.getElementById('zoneChartList').innerHTML = sortedZ.length
-    ? sortedZ.map(([n,c]) => `
-      <div class="chartRow">
-        <div class="chartLabel">${zoneShort(n)}</div>
-        <div class="chartBarWrap"><div class="chartBarFill" style="width:${(c/maxZ)*100}%"></div></div>
-        <div class="chartVal">${c}</div>
+    ? sortedZ.map(([zId, c]) => `
+      <div class="zoneStatRow" onclick="openZoneDetail('${zId}')">
+        <div class="zoneStatLabel">${zoneShort(zId)}</div>
+        <div class="zoneStatBarWrap"><div class="zoneStatBarFill" style="width:${(c/maxZ)*100}%"></div></div>
+        <div class="zoneStatCount">${c}회</div>
+        <div class="zoneStatArrow">›</div>
       </div>`).join('')
     : '<div class="empty" style="padding:20px 0">데이터 없음</div>';
 
-  document.getElementById('zoneWorkerDetail').innerHTML = sortedZ.length
-    ? sortedZ.map(([zId]) => {
-        const wMap    = zoneWorkers[zId] || {};
-        const wSorted = Object.entries(wMap).sort((a,b) => b[1]-a[1]);
-        return `<div class="zoneDetailBlock">
-          <div class="zoneDetailTitle">${zoneLabel(zId)}<span style="font-size:11px;color:var(--text3)">총 ${zoneCount[zId]}회 배정</span></div>
-          <div class="zoneDetailWorkers">
-            ${wSorted.map(([w,c]) => `<span class="zoneDetailWorkerTag">${w}<span class="zoneDetailCount">${c}</span></span>`).join('')}
-          </div>
-        </div>`;
-      }).join('')
-    : '<div class="empty" style="padding:20px 0">데이터 없음</div>';
+  // zoneDetailPanel은 닫힌 상태 유지
+  document.getElementById('zoneDetailPanel').style.display = 'none';
 
   const byDate = {};
   records.forEach(r => { if (!byDate[r.date]) byDate[r.date]=[]; byDate[r.date].push(r); });
@@ -1303,8 +1343,77 @@ async function renderStats() {
 }
 
 // ════════════════════════════════════════════════════════
-// MANAGE
+// ZONE DETAIL DRILLDOWN
 // ════════════════════════════════════════════════════════
+async function openZoneDetail(zoneId) {
+  const records = await cachedRecords();
+
+  // 이 구역이 배정된 기록만 추출, 날짜 내림차순
+  const zoneRecords = records
+    .filter(r => r.zones.find(z => z.zoneId === zoneId))
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  // 날짜별로 묶기 (같은 날 여러 번 배정된 경우 합침)
+  const byDate = {};
+  zoneRecords.forEach(r => {
+    const z = r.zones.find(z => z.zoneId === zoneId);
+    if (!byDate[r.date]) byDate[r.date] = { workers: [], leaders: [] };
+    z.workers.forEach(w => { if (!byDate[r.date].workers.includes(w)) byDate[r.date].workers.push(w); });
+    if (!byDate[r.date].leaders.includes(r.leader)) byDate[r.date].leaders.push(r.leader);
+  });
+
+  // 전체 기간 동안 이 구역에 배정된 전도인 통계
+  const workerCount = {};
+  Object.values(byDate).forEach(d => d.workers.forEach(w => { workerCount[w] = (workerCount[w]||0) + 1; }));
+  const workerSorted = Object.entries(workerCount).sort((a,b) => b[1]-a[1]);
+
+  const panel = document.getElementById('zoneDetailPanel');
+  const chartCard = panel.previousElementSibling; // .card (구역 선택 카드)
+
+  document.getElementById('zoneDetailTitle').innerHTML = zoneLabel(zoneId);
+
+  const totalDates = Object.keys(byDate).length;
+
+  document.getElementById('zoneDetailContent').innerHTML = `
+    <!-- 요약 -->
+    <div class="card" style="margin-bottom:12px">
+      <div class="cardTitle">전도인 참여 현황 (누적)</div>
+      ${workerSorted.length
+        ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+            ${workerSorted.map(([w,c]) => `
+              <span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12px">
+                ${w}
+                <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--accent);background:var(--accent-dim);border-radius:3px;padding:1px 5px">${c}회</span>
+              </span>`).join('')}
+          </div>`
+        : '<div style="color:var(--text3);font-size:13px">데이터 없음</div>'}
+    </div>
+    <!-- 날짜별 기록 -->
+    <div class="card">
+      <div class="cardTitle">날짜별 배정 기록 <span style="font-weight:400;color:var(--text3)">(총 ${totalDates}회)</span></div>
+      ${Object.keys(byDate).sort().reverse().map(date => {
+        const d = byDate[date];
+        return `<div class="zoneHistoryItem">
+          <div class="zoneHistoryDate">${formatDate(date)}</div>
+          <div class="zoneHistoryWorkers">
+            ${d.workers.map(w => `<span class="zoneHistoryWorkerTag">${w}</span>`).join('')}
+          </div>
+          <div class="zoneHistorySummary">전도인 ${d.workers.length}명</div>
+        </div>`;
+      }).join('') || '<div style="color:var(--text3);font-size:13px;padding:8px 0">배정 기록 없음</div>'}
+    </div>`;
+
+  // 목록 숨기고 패널 표시
+  chartCard.style.display = 'none';
+  panel.style.display = 'block';
+}
+
+function closeZoneDetail() {
+  const panel = document.getElementById('zoneDetailPanel');
+  const chartCard = panel.previousElementSibling;
+  panel.style.display = 'none';
+  chartCard.style.display = '';
+}
 async function renderManage(tab) {
   if (tab === 'leader') {
     const leaders = await cachedLeaders();
